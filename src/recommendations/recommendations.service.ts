@@ -33,12 +33,14 @@ export class RecommendationsService {
     const query = `
       select *
       from product
-      where category = '${product.category}'
-        and name <> '${product.name}'
+      where category = ?
+        and name <> ?
       order by ${sort} ${direction}
-      limit ${limit};
+      limit ?;
     `;
-    const rows = await this.em.getConnection().execute<Product[]>(query);
+    const rows = await this.em
+      .getConnection()
+      .execute<Product[]>(query, [product.category, product.name, limit]);
 
     return rows.map((row: Product) => this.em.map(Product, row));
   }

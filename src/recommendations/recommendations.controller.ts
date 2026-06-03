@@ -20,6 +20,12 @@ import { RecommendationsService } from './recommendations.service';
 @ApiTags('Recommendations controller')
 export class RecommendationsController {
   private readonly logger = new Logger(RecommendationsController.name);
+  private readonly allowedSortColumns = new Set([
+    'views_count',
+    'name',
+    'category',
+    'created_at'
+  ]);
 
   constructor(
     private readonly recommendationsService: RecommendationsService
@@ -57,7 +63,7 @@ export class RecommendationsController {
     @Query('product') productName: string,
     @Query('limit') limitParam: string,
     @Query('sort') sort = 'views_count',
-    @Query('direction') direction = 'desc'
+    @Query('direction') directionParam = 'desc'
   ): Promise<ProductDto[]> {
     this.logger.debug(`Get recommendations for product "${productName}"`);
 
@@ -72,6 +78,15 @@ export class RecommendationsController {
     const limit = limitParam ? Number(limitParam) : 3;
     if (limit <= 0) {
       throw new BadRequestException('Limit must be positive');
+    }
+
+    if (!this.allowedSortColumns.has(sort)) {
+      throw new BadRequestException('Unsupported sort field');
+    }
+
+    const direction = directionParam.toLowerCase();
+    if (direction !== 'asc' && direction !== 'desc') {
+      throw new BadRequestException('Direction must be asc or desc');
     }
 
     const products = await this.recommendationsService.findRelated(
