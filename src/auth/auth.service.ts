@@ -1,6 +1,7 @@
 import { EntityManager } from '@mikro-orm/core';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import { KeyCloakService } from '../keycloak/keycloak.service';
 import { HttpClientService } from '../httpclient/httpclient.service';
@@ -32,6 +33,7 @@ export enum JwtProcessorType {
 
 @Injectable()
 export class AuthService {
+  private static readonly MIN_SHARED_SECRET_LENGTH = 32;
   private processors: Map<JwtProcessorType, JwtTokenProcessor>;
 
   constructor(
@@ -75,6 +77,11 @@ export class AuthService {
     const jwtSecretKey = configService.get<string>(
       AuthModuleConfigProperties.ENV_JWT_SECRET_KEY
     );
+    const normalizedJwtSecretKey = this.normalizeSharedSecret(
+      jwtSecretKey,
+      privateKey,
+      publicKey
+    );
 
     this.processors = new Map();
     this.processors.set(
@@ -83,11 +90,11 @@ export class AuthService {
     );
     this.processors.set(
       JwtProcessorType.SQL_KID,
-      new JwtTokenWithSqlKIDProcessor(this.em, jwtSecretKey)
+      new JwtTokenWithSqlKIDProcessor(this.em, normalizedJwtSecretKey)
     );
     this.processors.set(
       JwtProcessorType.WEAK_KEY,
-      new JwtTokenWithWeakKeyProcessor(jwtSecretKey)
+      new JwtTokenWithWeakKeyProcessor(normalizedJwtSecretKey)
     );
     this.processors.set(
       JwtProcessorType.JKU,
@@ -108,7 +115,7 @@ export class AuthService {
 
     this.processors.set(
       JwtProcessorType.BEARER,
-      new JwtBearerTokenProcessor(jwtSecretKey, this.keyCloakService)
+      new JwtBearerTokenProcessor(normalizedJwtSecretKey, this.keyCloakService)
     );
 
     this.processors.set(
@@ -127,5 +134,24 @@ export class AuthService {
 
   createToken(payload: unknown, processor: JwtProcessorType): Promise<string> {
     return this.processors.get(processor).createToken(payload);
+  }
+
+  private normalizeSharedSecret(
+    secret: string,
+    privateKey: string,
+    publicKey: string
+  ): string {
+    if (
+      secret &&
+      secret.trim().length >= AuthService.MIN_SHARED_SECRET_LENGTH
+    ) {
+      return secret;
+    }
+
+    return createHash('sha512')
+      .update(privateKey)
+      .update(publicKey)
+      .update(secret || '')
+      .digest('hex');
   }
 }
